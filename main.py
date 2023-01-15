@@ -15,10 +15,11 @@ from nltk.tokenize import word_tokenize
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.naive_bayes import MultinomialNB
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_score
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.over_sampling import RandomOverSampler
+from sklearn.model_selection import StratifiedKFold
 
 
 # misc
@@ -41,8 +42,8 @@ def timer_func(func):
 @timer_func
 def remove_stopwords(dataset):
     # downloads stopwords
-    nltk.download('stopwords')
-    nltk.download('punkt')
+    # nltk.download('stopwords')
+    # nltk.download('punkt')
 
     stop_words = set(stopwords.words('english'))
     dataset['text'] = dataset['text'].apply(lambda x: ' '.join(
@@ -69,17 +70,16 @@ def dataset_info(dataset):
     print(info)
 
 
-def predict_message_class(lr, vector):
-    text = input('Enter Text(Subject of the mail): ')
-    stop_words = set(stopwords.words('english'))
-    text = [' '.join([word for word in word_tokenize(text)
-                     if not word in stop_words])]
-    term = vector.transform(text).toarray()
-    print('Predicted Class:', end=' ')
-    print('Spam' if lr.predict(term)[0] else 'Not Spam')
-    prob = lr.predict_proba(term)*100
-    print(f"Not Spam: {prob[0][0]}%\nSpam: {prob[0][1]}%")
+class MockPreprocessor:
+    def __init__(self, a):
+        pass
 
+    def fit_resample(self, a, b):
+        return a, b
+
+
+def perform_classification():
+    pass
 
 def main():
     # prepare dataset from csv
@@ -91,45 +91,67 @@ def main():
     # remove stopwords - words that bring no meaning to the text (etc. I, is, are, the)
     remove_stopwords(dataset)
 
-    # prepare data
-    X_train, X_test, y_train, y_test = train_test_split(
-        dataset.loc[:, 'text'], dataset.loc[:, 'class'], test_size=0.30, random_state=1337)
-
-    # preprocess text to build ML model
-    vector = CountVectorizer()
-    vector.fit(X_train)
-    print('Number of Tokens: ', len(vector.vocabulary_.keys()))
-
-    # prepare document term matrix
-    X_train = vector.transform(X_train).toarray()
-    print(f"Number of Observations before: {X_train.shape[0]}")
-
-    #SMOTE
-    #sm = SMOTE(random_state=1337)
-    #X_train, y_train = sm.fit_resample(X_train, y_train)
-    #print(f"Number of Observations after: {X_train.shape[0]}")
-
-    #Undersampling
-    #rus = RandomUnderSampler(random_state=42)
-    #X_train, y_train = rus.fit_resample(X_train, y_train)
-    #print(f"Number of Observations after: {X_train.shape[0]}")
-
-
-    #Oversampling
-    ros = RandomOverSampler(random_state=42)
-    X_train, y_train = ros.fit_resample(X_train, y_train)
-    print(f"Number of Observations after: {X_train.shape[0]}")
-
-    # use model
+    X = dataset['text']
+    y = dataset['class']
     clf = MultinomialNB()
-    clf.fit(X_train, y_train)
+    vector = CountVectorizer()
+    cv = StratifiedKFold(n_splits=2)
 
-    # test
-    X_test = vector.transform(X_test).toarray()
-    pred = clf.predict(X_test)
-    print(f"F1 Score: {round(f1_score(y_test, pred) * 100, 2)}%")
+    preprocessors = {
+        'Without': MockPreprocessor(1337),
+        # 'SMOTE': SMOTE(random_state=1337),
+        'Undersampling': RandomUnderSampler(random_state=1337),
+        # 'Oversampling': RandomOverSampler(random_state=1337)
+    }
+    scores = {
+        'Without': {'f1_score': [], 'accuracy': [], 'precision': [], 'recall': []},
+        'SMOTE': {'f1_score': [], 'accuracy': [], 'precision': [], 'recall': []},
+        'Undersampling': {'f1_score': [], 'accuracy': [], 'precision': [], 'recall': []},
+        'Oversampling': {'f1_score': [], 'accuracy': [], 'precision': [], 'recall': []}
+    }
 
-    predict_message_class(clf, vector)
+    for name, preprocessor in preprocessors.items():
+        for train_idx, test_idx, in tqdm(cv.split(X, y), total=cv.get_n_splits(), desc=name):
+            X_train, y_train = X[train_idx], y[train_idx]
+            X_test, y_test = X[test_idx], y[test_idx]
+
+            # preprocess text to build ML model
+            vector.fit(X_train)
+
+            # prepare document term matrix
+            X_train = vector.transform(X_train).toarray()
+            X_train, y_train = preprocessor.fit_resample(X_train, y_train)
+
+            # use model
+            clf.fit(X_train, y_train)
+
+            # test
+            X_test = vector.transform(X_test).toarray()
+            pred = clf.predict(X_test)
+
+            scores[name]['f1_score'].append(round(f1_score(y_test, pred) * 100, 2))
+            scores[name]['accuracy'].append(round(accuracy_score(y_test, pred) * 100, 2))
+            scores[name]['precision'].append(round(precision_score(y_test, pred) * 100, 2))
+            scores[name]['recall'].append(round(recall_score(y_test, pred) * 100, 2))
+
+    # calculate meanscores
+    mean_scores = {
+        'Without': {'f1_score': 0, 'accuracy': 0, 'precision': 0, 'recall': 0},
+        'SMOTE': {'f1_score': 0, 'accuracy': 0, 'precision': 0, 'recall': 0},
+        'Undersampling': {'f1_score': 0, 'accuracy': 0, 'precision': 0, 'recall': 0},
+        'Oversampling': {'f1_score': 0, 'accuracy': 0, 'precision': 0, 'recall': 0}
+    }
+    for key, value in scores.items():
+        for measurements_key, measurements_values in value.items():
+            mean_scores[key][measurements_key] = np.round(
+                np.mean(measurements_values), 2)
+
+    print("Mean scores:")
+    for key, value in mean_scores.items():
+        print(key, ": ")
+        for measurements_key, measurements_value in value.items():
+            print(f"{measurements_key} : {measurements_value}%")
+        print(' ')
 
 
 if __name__ == "__main__":
