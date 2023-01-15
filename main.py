@@ -19,7 +19,7 @@ from sklearn.metrics import f1_score, accuracy_score, precision_score, recall_sc
 from imblearn.over_sampling import SMOTE
 from imblearn.under_sampling import RandomUnderSampler
 from imblearn.over_sampling import RandomOverSampler
-from sklearn.model_selection import StratifiedKFold
+from sklearn.model_selection import RepeatedKFold
 
 # misc
 from tqdm import tqdm
@@ -118,7 +118,7 @@ def main():
     y = dataset['class']
     clf = MultinomialNB()
     vector = CountVectorizer()
-    cv = StratifiedKFold(n_splits=5)
+    cv = RepeatedKFold(n_splits=5, n_repeats=2, random_state=2652124)
 
     preprocessors = {
         'Without': MockPreprocessor(1337),
