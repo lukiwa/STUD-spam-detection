@@ -14,8 +14,12 @@ from nltk.tokenize import word_tokenize
 # ML
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import CountVectorizer
-from sklearn.linear_model import LogisticRegression
+from sklearn.naive_bayes import MultinomialNB
 from sklearn.metrics import f1_score
+from imblearn.over_sampling import SMOTE
+from imblearn.under_sampling import RandomUnderSampler
+from imblearn.over_sampling import RandomOverSampler
+
 
 # misc
 from tqdm import tqdm
@@ -37,8 +41,8 @@ def timer_func(func):
 @timer_func
 def remove_stopwords(dataset):
     # downloads stopwords
-    # nltk.download('stopwords')
-    # nltk.download('punkt')
+    nltk.download('stopwords')
+    nltk.download('punkt')
 
     stop_words = set(stopwords.words('english'))
     dataset['text'] = dataset['text'].apply(lambda x: ' '.join(
@@ -89,7 +93,7 @@ def main():
 
     # prepare data
     X_train, X_test, y_train, y_test = train_test_split(
-        dataset.loc[:, 'text'], dataset.loc[:, 'class'], test_size=0.20, random_state=1337)
+        dataset.loc[:, 'text'], dataset.loc[:, 'class'], test_size=0.30, random_state=1337)
 
     # preprocess text to build ML model
     vector = CountVectorizer()
@@ -97,19 +101,35 @@ def main():
     print('Number of Tokens: ', len(vector.vocabulary_.keys()))
 
     # prepare document term matrix
-    term = vector.transform(X_train).toarray()
-    print(f"Number of Observations: {term.shape[0]}")
+    X_train = vector.transform(X_train).toarray()
+    print(f"Number of Observations before: {X_train.shape[0]}")
+
+    #SMOTE
+    #sm = SMOTE(random_state=1337)
+    #X_train, y_train = sm.fit_resample(X_train, y_train)
+    #print(f"Number of Observations after: {X_train.shape[0]}")
+
+    #Undersampling
+    #rus = RandomUnderSampler(random_state=42)
+    #X_train, y_train = rus.fit_resample(X_train, y_train)
+    #print(f"Number of Observations after: {X_train.shape[0]}")
+
+
+    #Oversampling
+    ros = RandomOverSampler(random_state=42)
+    X_train, y_train = ros.fit_resample(X_train, y_train)
+    print(f"Number of Observations after: {X_train.shape[0]}")
 
     # use model
-    lr = LogisticRegression()
-    lr.fit(term, y_train)
+    clf = MultinomialNB()
+    clf.fit(X_train, y_train)
 
     # test
-    test_term = vector.transform(X_test).toarray()
-    pred = lr.predict(test_term)
+    X_test = vector.transform(X_test).toarray()
+    pred = clf.predict(X_test)
     print(f"F1 Score: {round(f1_score(y_test, pred) * 100, 2)}%")
 
-    predict_message_class(lr, vector)
+    predict_message_class(clf, vector)
 
 
 if __name__ == "__main__":
